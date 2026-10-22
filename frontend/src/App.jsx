@@ -56,6 +56,8 @@ const ARCHES = [
   { id: 'x86_64', label: 'x86_64', sub: 'Intel / AMD'  },
 ]
 
+const API_BASE = import.meta.env.VITE_API_URL ?? ''
+
 export default function App() {
   const [code, setCode] = useState(DEFAULT_CODE)
   const [result, setResult] = useState(null)
@@ -90,7 +92,7 @@ export default function App() {
     setPlaying(false)
 
     try {
-      const res = await fetch('/api/compile', {
+      const res = await fetch(`${API_BASE}/api/compile`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, arch }),
@@ -112,7 +114,7 @@ export default function App() {
       // Trace is ARM64-only; still fire the request so we get a clean error message
       setTraceLoading(true)
       try {
-        const traceRes = await fetch('/api/trace', {
+        const traceRes = await fetch(`${API_BASE}/api/trace`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code, arch }),

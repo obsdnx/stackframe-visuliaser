@@ -6,48 +6,88 @@ Approximate — designed for simple C programs with no syscalls.
 import re
 import subprocess
 import os
+import platform
+
+IS_MACOS = platform.system() == 'Darwin'
+NATIVE_ARCH = 'arm64' if platform.machine() in ('arm64', 'aarch64') else 'x86_64'
 
 
 # ---------------------------------------------------------------------------
-# 1. otool disassembly
+# 1. Disassembly — otool (macOS) or objdump (Linux)
 # ---------------------------------------------------------------------------
 
-def get_otool_disassembly(binary_path, arch='arm64'):
-    result = subprocess.run(
-        ['otool', '-tv', '-arch', arch, binary_path],
-        capture_output=True, text=True, timeout=15
-    )
-    return result.stdout
+def get_disassembly(binary_path, arch='arm64'):
+    """Returns (disasm_text, tool) where tool is 'otool' or 'objdump'."""
+    if IS_MACOS:
+        result = subprocess.run(
+            ['otool', '-tv', '-arch', arch, binary_path],
+            capture_output=True, text=True, timeout=15
+        )
+        return result.stdout, 'otool'
+    else:
+        result = subprocess.run(
+            ['objdump', '-d', '--no-show-raw-insn', binary_path],
+            capture_output=True, text=True, timeout=15
+        )
+        if result.returncode != 0:
+            # Fall back without --no-show-raw-insn
+            result = subprocess.run(
+                ['objdump', '-d', binary_path],
+                capture_output=True, text=True, timeout=15
+            )
+        return result.stdout, 'objdump'
 
 
 # ---------------------------------------------------------------------------
-# 2. Source line mapping via atos
+# 2. Source line mapping — atos (macOS) or addr2line (Linux)
 # ---------------------------------------------------------------------------
 
 def get_source_lines(binary_path, addresses, arch='arm64'):
     if not addresses:
         return {}
     try:
-        addr_args = [hex(a) for a in addresses]
-        result = subprocess.run(
-            ['atos', '-o', binary_path, '-arch', arch, '-l', '0x100000000'] + addr_args,
-            capture_output=True, text=True, timeout=15
-        )
-        addr_to_line = {}
-        for addr, info in zip(addresses, result.stdout.strip().split('\n')):
-            m = re.search(r':(\d+)\)', info)
-            if m:
-                addr_to_line[addr] = int(m.group(1))
-        return addr_to_line
+        if IS_MACOS:
+            addr_args = [hex(a) for a in addresses]
+            result = subprocess.run(
+                ['atos', '-o', binary_path, '-arch', arch, '-l', '0x100000000'] + addr_args,
+                capture_output=True, text=True, timeout=15
+            )
+            addr_to_line = {}
+            for addr, info in zip(addresses, result.stdout.strip().split('\n')):
+                m = re.search(r':(\d+)\)', info)
+                if m:
+                    addr_to_line[addr] = int(m.group(1))
+            return addr_to_line
+        else:
+            addr_args = [hex(a) for a in addresses]
+            result = subprocess.run(
+                ['addr2line', '-e', binary_path, '-f'] + addr_args,
+                capture_output=True, text=True, timeout=15
+            )
+            # addr2line -f output: pairs of (function_name\nfile:line) per address
+            lines = result.stdout.strip().split('\n')
+            addr_to_line = {}
+            for i, addr in enumerate(addresses):
+                file_line_idx = i * 2 + 1
+                if file_line_idx < len(lines):
+                    parts = lines[file_line_idx].rsplit(':', 1)
+                    if len(parts) == 2:
+                        try:
+                            lineno = int(parts[1])
+                            if lineno > 0:
+                                addr_to_line[addr] = lineno
+                        except ValueError:
+                            pass
+            return addr_to_line
     except Exception:
         return {}
 
 
 # ---------------------------------------------------------------------------
-# 3. Parse otool output (works for both ARM64 and x86_64)
+# 3. Parse disassembly output (otool or objdump)
 # ---------------------------------------------------------------------------
 
-def parse_otool(disasm_text):
+def parse_disassembly(disasm_text, tool='otool'):
     instructions = []
     addr_map = {}
     func_map = {}
@@ -57,22 +97,41 @@ def parse_otool(disasm_text):
         if not line:
             continue
 
-        m = re.match(r'^_?([a-zA-Z_]\w*):$', line)
-        if m:
-            func_map['__pending__'] = m.group(1)
-            continue
-
-        m = re.match(r'^([0-9a-fA-F]+)\s+(.+)$', line)
-        if m:
-            addr = int(m.group(1), 16)
-            instr = m.group(2).strip()
-            if '__pending__' in func_map:
-                fname = func_map.pop('__pending__')
+        if tool == 'otool':
+            m = re.match(r'^_?([a-zA-Z_]\w*):$', line)
+            if m:
+                func_map['__pending__'] = m.group(1)
+                continue
+            m = re.match(r'^([0-9a-fA-F]+)\s+(.+)$', line)
+            if m:
+                addr = int(m.group(1), 16)
+                instr = m.group(2).strip()
+                if '__pending__' in func_map:
+                    fname = func_map.pop('__pending__')
+                    func_map[fname] = addr
+                # raw_idx = actual line position so line_idx maps to
+                # disassembly.split('\n')[line_idx] in the trace view
+                instructions.append((addr, instr, raw_idx))
+                addr_map[addr] = raw_idx
+        else:
+            # objdump format: "0000000000401136 <add>:" for function headers
+            m = re.match(r'^([0-9a-fA-F]+)\s+<([a-zA-Z_]\w*)>:$', line)
+            if m:
+                addr = int(m.group(1), 16)
+                fname = m.group(2).lstrip('_')
                 func_map[fname] = addr
-            # raw_idx = actual line position in the split text so that
-            # line_idx maps directly to disassembly.split('\n')[line_idx]
-            instructions.append((addr, instr, raw_idx))
-            addr_map[addr] = raw_idx
+                continue
+            # Instruction: "  401136:  push   %rbp" or "  401136:  55   push   %rbp"
+            m = re.match(r'^([0-9a-fA-F]+):', line)
+            if m:
+                addr = int(m.group(1), 16)
+                # Split by tab; last field is the instruction (strip hex bytes if present)
+                parts = raw.split('\t')
+                if len(parts) >= 2:
+                    instr = parts[-1].strip()
+                    if instr:
+                        instructions.append((addr, instr, raw_idx))
+                        addr_map[addr] = raw_idx
 
     return instructions, addr_map, func_map
 
@@ -642,20 +701,25 @@ def generate_trace(c_code, arch='arm64', max_steps=600):
             f.write(c_code)
 
         # Compile
-        gcc_arch = ['-arch', arch]
+        if IS_MACOS:
+            gcc_flags = ['-g', '-O0', '-arch', arch]
+        else:
+            if arch == 'arm64' and NATIVE_ARCH != 'arm64':
+                return None, [], 'ARM64 trace is only available on macOS or ARM64 Linux. Switch to x86_64.'
+            gcc_flags = ['-g', '-O0', '-no-pie']  # -no-pie gives fixed addresses for addr2line
         result = subprocess.run(
-            ['gcc', '-g', '-O0'] + gcc_arch + ['-o', bin_path, src_path],
+            ['gcc'] + gcc_flags + ['-o', bin_path, src_path],
             capture_output=True, text=True, timeout=15
         )
         if result.returncode != 0:
             return None, [], result.stderr or 'Compilation failed'
 
         # Disassemble
-        disasm_text = get_otool_disassembly(bin_path, arch=arch)
+        disasm_text, disasm_tool = get_disassembly(bin_path, arch=arch)
         if not disasm_text.strip():
-            return None, [], 'otool produced no output'
+            return None, [], 'Disassembler produced no output'
 
-        instructions, addr_map, func_map = parse_otool(disasm_text)
+        instructions, addr_map, func_map = parse_disassembly(disasm_text, tool=disasm_tool)
 
         if 'main' not in func_map:
             return disasm_text, [], 'No main function found in disassembly'

@@ -2,6 +2,9 @@ import re
 import subprocess
 import tempfile
 import os
+import platform
+
+IS_MACOS = platform.system() == 'Darwin'
 
 TYPE_SIZES = {
     'char': 1,
@@ -50,10 +53,9 @@ def compile_to_assembly(c_code, arch='arm64'):
 
     try:
         cmd = ['gcc', '-S', '-O0', '-fverbose-asm', '-o', '-']
-        if arch == 'x86_64':
-            cmd += ['-arch', 'x86_64']
-        else:
-            cmd += ['-arch', 'arm64']
+        if IS_MACOS:
+            cmd += ['-arch', arch]
+        # On Linux: gcc compiles for the native arch; -arch flag is not supported
         cmd.append(tmp_path)
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15)
