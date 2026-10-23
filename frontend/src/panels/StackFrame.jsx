@@ -1,24 +1,24 @@
 const KINDS = {
   ret_addr: {
     color: '#f9e2af',
-    bg: 'rgba(249,226,175,0.14)',
-    border: 'rgba(249,226,175,0.45)',
+    bg: 'rgba(249,226,175,0.15)',
+    border: 'rgba(249,226,175,0.5)',
     badge: 'ret addr',
-    tip: 'Saved by the CPU on CALL. When RET/BL executes, the CPU jumps here to resume the caller. Stored in lr (x30) on ARM64, pushed to stack on x86.',
+    tip: 'Return address saved by the CPU on CALL/BL. When RET executes, the CPU jumps here to resume the caller.',
   },
   saved_fp: {
     color: '#fab387',
-    bg: 'rgba(250,179,135,0.14)',
-    border: 'rgba(250,179,135,0.45)',
+    bg: 'rgba(250,179,135,0.15)',
+    border: 'rgba(250,179,135,0.5)',
     badge: 'frame ptr',
-    tip: "The caller's frame pointer saved in the prologue (stp x29,x30 / push rbp). Restored on return so the caller can find its own local variables.",
+    tip: "Caller's frame pointer (FP/RBP) saved in the prologue. Restored on return so the caller can find its own locals.",
   },
   var: {
     color: '#cba6f7',
-    bg: 'rgba(203,166,247,0.11)',
-    border: 'rgba(203,166,247,0.32)',
+    bg: 'rgba(203,166,247,0.12)',
+    border: 'rgba(203,166,247,0.35)',
     badge: 'local',
-    tip: 'Stack-allocated local variable. Space reserved in the function prologue (sub sp,sp,#N). Freed automatically when the frame is popped on return.',
+    tip: 'Stack-allocated local variable. Space reserved in the prologue (sub sp / subq rsp), freed automatically on return.',
   },
 }
 
@@ -28,66 +28,83 @@ function kindOf(part) {
   return 'saved_fp'
 }
 
-function PartRow({ part, arch, showFpArrow }) {
+function PartRow({ part, arch, showFpArrow, active, written }) {
   const k = KINDS[kindOf(part)]
   const fpReg = arch === 'x86_64' ? 'RBP' : 'FP'
 
   return (
-    <div className="sf-row" style={{ background: k.bg, borderColor: k.border }} title={k.tip}>
-      <span className="sf-row-offset">
-        {part.sp_offset != null ? (part.offset_str ?? `sp+${part.sp_offset}`) : ''}
+    <div
+      className={`sf2-row${written ? ' sf2-row-written' : ''}`}
+      style={{
+        background: active ? k.bg : 'rgba(255,255,255,0.025)',
+        borderLeft: `2px solid ${active ? k.border : 'rgba(255,255,255,0.07)'}`,
+      }}
+      title={k.tip}
+    >
+      <span className="sf2-offset" style={{ color: active ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.18)' }}>
+        {part.sp_offset != null ? (part.offset_str ?? `+${part.sp_offset}`) : ''}
       </span>
-      <span className="sf-row-label" style={{ color: k.color }}>{part.label}</span>
-      <span className="sf-row-badge" style={{ color: k.color }}>{k.badge}</span>
-      <span className="sf-row-size">{part.size}B</span>
-      <span className="sf-row-ptr">
-        {showFpArrow && <span style={{ color: '#fab387' }}>← {fpReg}</span>}
+      <span className="sf2-label" style={{ color: active ? k.color : 'rgba(255,255,255,0.28)' }}>
+        {part.label}
       </span>
+      <span
+        className="sf2-badge"
+        style={{
+          color: active ? k.color : 'rgba(255,255,255,0.2)',
+          background: active ? k.bg : 'transparent',
+          borderColor: active ? k.border : 'rgba(255,255,255,0.08)',
+        }}
+      >
+        {k.badge}
+      </span>
+      <span className="sf2-size" style={{ color: active ? 'rgba(255,255,255,0.38)' : 'rgba(255,255,255,0.18)' }}>
+        {part.size}B
+      </span>
+      {showFpArrow && (
+        <span className="sf2-fp-arrow" style={{ color: active ? '#fab387' : 'rgba(250,179,135,0.25)' }}>
+          ← {fpReg}
+        </span>
+      )}
     </div>
   )
 }
 
-function FrameCard({ frame, arch }) {
+function FrameBlock({ frame, active, arch, writtenOffsets }) {
   const { function: name, frame_size, parts } = frame
-  const spReg = arch === 'x86_64' ? 'RSP' : 'SP'
 
-  // FP points to the last meta row (saved frame ptr, not return addr)
   let fpRowIdx = -1
   for (let i = parts.length - 1; i >= 0; i--) {
     if (parts[i].kind === 'meta') { fpRowIdx = i; break }
   }
 
   return (
-    <div className="sf-card">
-      <div className="sf-card-header">
-        <span className="sf-card-name">{name}()</span>
-        <span className="sf-size-badge">
-          {frame_size > 0 ? `${frame_size} bytes` : 'size unknown'}
-        </span>
+    <div className={`sf2-frame${active ? ' sf2-frame-active' : ' sf2-frame-inactive'}`}>
+      <div className={`sf2-frame-hdr${active ? ' sf2-frame-hdr-active' : ''}`}>
+        <span className="sf2-func-name">{name}()</span>
+        {active
+          ? <span className="sf2-badge-active">● ACTIVE</span>
+          : <span className="sf2-badge-inactive">INACTIVE</span>}
+        <span className="sf2-frame-size">{frame_size > 0 ? `${frame_size}B` : '?'}</span>
       </div>
 
-      <div className="sf-addr-edge sf-addr-high">
-        <span className="sf-addr-arrow">↑</span>
-        <span>high address — caller&apos;s frame above this line</span>
-      </div>
-
-      {parts.length === 0 ? (
-        <div className="sf-empty">no frame data</div>
-      ) : (
-        parts.map((part, i) => (
+      {parts.length === 0
+        ? <div className="sf2-no-data">no frame data</div>
+        : parts.map((part, i) => (
           <PartRow
             key={i}
             part={part}
             arch={arch}
             showFpArrow={i === fpRowIdx}
+            active={active}
+            written={active && part.sp_offset != null && writtenOffsets.has(part.sp_offset)}
           />
         ))
-      )}
+      }
 
-      <div className="sf-sp-bar">
-        <span className="sf-sp-reg">← {spReg}</span>
-        <span className="sf-addr-low">↓ low address — stack grows this way</span>
-      </div>
+      {/* Yellow return-link row shown at the bottom of each inactive frame */}
+      {!active && (
+        <div className="sf2-ret-link">↓ return link to {name}()</div>
+      )}
     </div>
   )
 }
@@ -98,31 +115,99 @@ const LEGEND = [
   { color: '#cba6f7', label: 'Local variable' },
 ]
 
-export default function StackFrame({ stackFrames, loading, arch = 'arm64' }) {
+export default function StackFrame({
+  stackFrames,
+  loading,
+  arch = 'arm64',
+  callStack = [],
+  traceStep,
+}) {
   if (loading) return <div className="spinner">Compiling…</div>
   if (!stackFrames || stackFrames.length === 0) {
     return <div className="placeholder">Compile C code to see stack frames</div>
   }
 
+  const spReg = arch === 'x86_64' ? 'RSP' : 'SP'
   const archLabel = arch === 'x86_64' ? 'x86_64 · RBP-relative' : 'ARM64 · SP-relative'
 
+  // Build a name→frame lookup (js-index-maps pattern)
+  const frameMap = new Map(stackFrames.map(f => [f.function, f]))
+
+  const hasTrace = callStack.length > 0
+
+  // Which frames to render, top→bottom (oldest/highest addr first)
+  const visibleNames = hasTrace ? callStack : stackFrames.map(f => f.function)
+  const activeFunc = hasTrace ? callStack[callStack.length - 1] : null
+
+  // Offsets written this step (for variable flash highlight)
+  const writtenOffsets = new Set()
+  if (traceStep?.mem_writes) {
+    for (const mw of traceStep.mem_writes) {
+      if (mw.sp_offset != null) writtenOffsets.add(mw.sp_offset)
+    }
+  }
+
+  // Current SP value for the SP marker
+  const rawSp = traceStep?.registers?.sp ?? traceStep?.registers?.rsp
+  const spHex = rawSp
+    ? `0x${parseInt(rawSp, 16).toString(16).toUpperCase().padStart(8, '0').slice(-8)}`
+    : null
+
+  const isReturning = /^ret[q]?\b/.test(traceStep?.instruction?.trim() ?? '')
+
   return (
-    <div className="sf-panel">
-      <div className="sf-legend">
+    <div className="sf2-panel">
+      <div className="sf2-legend">
         {LEGEND.map(l => (
-          <span key={l.label} className="sf-legend-item">
-            <span className="sf-legend-dot" style={{ background: l.color }} />
+          <span key={l.label} className="sf2-legend-item">
+            <span className="sf2-legend-dot" style={{ background: l.color }} />
             {l.label}
           </span>
         ))}
-        <span className="sf-legend-arch">{archLabel}</span>
+        <span className="sf2-legend-arch">{archLabel}</span>
       </div>
 
-      {stackFrames.map((frame, i) => (
-        <FrameCard key={i} frame={frame} arch={arch} />
-      ))}
+      {/* High-address origin bar */}
+      <div className="sf2-origin">
+        <span className="sf2-origin-arrow">↑</span>
+        stack origin · high address
+      </div>
 
-      <div className="sf-hint">Hover any row for an explanation</div>
+      {/* Frame blocks — main at top, active function at bottom */}
+      <div className="sf2-frames">
+        {visibleNames.map(name => {
+          const frame = frameMap.get(name)
+          if (!frame) return null
+          return (
+            <FrameBlock
+              key={name}
+              frame={frame}
+              active={!hasTrace || name === activeFunc}
+              arch={arch}
+              writtenOffsets={writtenOffsets}
+            />
+          )
+        })}
+      </div>
+
+      {/* SP line — only when trace is active */}
+      {hasTrace && (
+        <div className={`sf2-sp-line${isReturning ? ' sf2-sp-returning' : ''}`}>
+          <span className="sf2-sp-reg">← {spReg}</span>
+          {spHex && <span className="sf2-sp-val">{spHex}</span>}
+        </div>
+      )}
+
+      {/* Available stack space */}
+      {hasTrace && (
+        <div className="sf2-available">
+          <span className="sf2-avail-text">· · · available stack space · · ·</span>
+        </div>
+      )}
+
+      {!hasTrace && (
+        <div className="sf2-hint">Step through the trace to see frames animate live</div>
+      )}
     </div>
   )
 }

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
 import './App.css'
 import CodeEditor from './panels/CodeEditor'
 import AssemblyPanel from './panels/AssemblyPanel'
@@ -158,6 +158,33 @@ export default function App() {
   const prevStep = trace?.[currentStep - 1]
   const highlightLine = step?.line_idx ?? null
 
+  // Build the live call stack by scanning trace history for calls/returns.
+  // main is always the base (emulator starts there without a bl instruction).
+  const callStack = useMemo(() => {
+    if (!trace || !result?.stack_frames) return []
+    const funcNames = new Set(result.stack_frames.map(f => f.function))
+    const stack = ['main']
+    for (let i = 0; i < currentStep && i < trace.length; i++) {
+      const instr = trace[i].instruction.trim()
+      const lower = instr.toLowerCase()
+      // ARM64: bl _funcname
+      if (lower.startsWith('bl ')) {
+        const name = instr.slice(3).trim().replace(/^_/, '')
+        if (funcNames.has(name) && name !== 'main') stack.push(name)
+      }
+      // x86_64: callq 0x... <_funcname>
+      else if (lower.startsWith('callq ') || lower.startsWith('call ')) {
+        const m = instr.match(/<_?(\w+)>/)
+        if (m && funcNames.has(m[1]) && m[1] !== 'main') stack.push(m[1])
+      }
+      // Returns pop the most recent frame (never pop main)
+      else if (lower === 'ret' || lower === 'retq') {
+        if (stack.length > 1) stack.pop()
+      }
+    }
+    return stack
+  }, [trace, currentStep, result])
+
   // Only enter trace mode once the user starts stepping
   const activeDisassembly = trace && (currentStep > 0 || playing) ? disassembly : null
 
@@ -292,6 +319,8 @@ export default function App() {
                 stackFrames={result?.stack_frames}
                 loading={loading}
                 arch={arch}
+                callStack={callStack}
+                traceStep={step}
               />
             </div>
           </div>
