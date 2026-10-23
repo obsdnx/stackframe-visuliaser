@@ -546,6 +546,16 @@ html, body, #root {
   gap: 2px;
 }
 
+.mem-seg-desc {
+  padding: 3px 10px 4px;
+  font-size: 10px;
+  color: var(--subtext);
+  opacity: 0.65;
+  font-style: italic;
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  line-height: 1.4;
+}
+
 .mem-var-row {
   display: flex;
   align-items: center;
@@ -585,9 +595,9 @@ html, body, #root {
 .seg-stack { border-color: var(--seg-stack); background: rgba(203,166,247,0.07); }
 .seg-stack .mem-segment-header { background: rgba(203,166,247,0.15); color: var(--seg-stack); }
 
-/* ── Stack Frame ── */
+/* ── Stack Frame (diagram view) ── */
 
-.stack-frame-panel {
+.sf-panel {
   padding: 10px;
   display: flex;
   flex-direction: column;
@@ -596,13 +606,45 @@ html, body, #root {
   height: 100%;
 }
 
-.frame-card {
+.sf-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 8px;
+}
+
+.sf-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10px;
+  color: var(--subtext);
+}
+
+.sf-legend-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.sf-legend-arch {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--subtext);
+  opacity: 0.5;
+}
+
+.sf-card {
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
 
-.frame-card-header {
+.sf-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -611,58 +653,129 @@ html, body, #root {
   font-size: 12px;
   font-weight: 700;
   color: var(--purple);
+  border-bottom: 1px solid var(--border);
 }
 
-.frame-size-badge {
+.sf-card-name { font-weight: 700; }
+
+.sf-size-badge {
   font-size: 10px;
   color: var(--subtext);
   background: rgba(0,0,0,0.3);
   padding: 1px 6px;
   border-radius: 3px;
+  font-weight: 400;
 }
 
-.frame-table { width: 100%; border-collapse: collapse; }
-
-.frame-table td {
-  padding: 4px 10px;
-  font-size: 11px;
-  border-bottom: 1px solid rgba(255,255,255,0.04);
-}
-
-.frame-table tr:last-child td { border-bottom: none; }
-
-.frame-row-meta td { color: var(--subtext); background: rgba(0,0,0,0.15); font-style: italic; }
-.frame-row-var td { color: var(--text); }
-.frame-row-var:hover td { background: rgba(203,166,247,0.07); }
-
-.frame-col-label { font-weight: 600; width: 60%; }
-.frame-col-size { text-align: right; color: var(--subtext); width: 20%; }
-.frame-col-offset { text-align: right; color: var(--teal); width: 20%; font-size: 10px; }
-
-.frame-meta-label {
-  font-size: 10px;
-  color: var(--subtext);
-  opacity: 0.6;
-  padding: 0 2px 6px;
-  line-height: 1.4;
-}
-
-.frame-high-addr-label {
-  text-align: right;
+/* High-address label */
+.sf-addr-edge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   padding: 3px 10px;
   font-size: 10px;
   color: var(--subtext);
-  opacity: 0.5;
+  opacity: 0.55;
   border-bottom: 1px dashed var(--border);
 }
 
-.frame-sp-label {
-  text-align: center;
-  padding: 4px;
+.sf-addr-arrow { font-size: 11px; }
+
+/* Each stack row — one entry in the frame (return addr / saved fp / local var) */
+.sf-row {
+  display: grid;
+  grid-template-columns: 56px 1fr auto auto 52px;
+  align-items: center;
+  gap: 0;
+  padding: 5px 10px;
+  border-bottom: 1px solid;
+  cursor: default;
+  transition: filter 0.1s;
+  font-size: 11px;
+}
+
+.sf-row:last-of-type { border-bottom: none; }
+
+.sf-row:hover { filter: brightness(1.25); }
+
+.sf-row-offset {
+  font-size: 9px;
+  color: var(--teal);
+  font-family: 'Menlo', 'Monaco', monospace;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+
+.sf-row-label {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 8px;
+}
+
+.sf-row-badge {
+  font-size: 9px;
+  opacity: 0.65;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-right: 8px;
+  white-space: nowrap;
+}
+
+.sf-row-size {
   font-size: 10px;
+  color: var(--subtext);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.sf-row-ptr {
+  text-align: right;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+  padding-left: 6px;
+}
+
+/* SP bar at the bottom */
+.sf-sp-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  border-top: 2px solid rgba(203,166,247,0.45);
+  background: rgba(203,166,247,0.06);
+}
+
+.sf-sp-reg {
+  font-size: 10px;
+  font-weight: 700;
   color: var(--purple);
-  letter-spacing: 0.06em;
-  opacity: 0.7;
+  letter-spacing: 0.04em;
+}
+
+.sf-addr-low {
+  font-size: 9px;
+  color: var(--subtext);
+  opacity: 0.5;
+}
+
+.sf-empty {
+  padding: 8px 10px;
+  font-size: 11px;
+  color: var(--subtext);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.sf-hint {
+  font-size: 10px;
+  color: var(--subtext);
+  opacity: 0.4;
+  text-align: center;
+  padding-bottom: 4px;
 }
 
 /* ── Spinner ── */
