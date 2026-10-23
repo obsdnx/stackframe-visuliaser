@@ -6,6 +6,18 @@ An interactive C memory visualiser. Write C code in the browser, compile it on a
 
 ---
 
+## Screenshots
+
+**Stack frame reconstruction** — every function's frame with variable names, types, sizes, and `sp`-relative offsets derived from real assembly output:
+
+![Stack frames panel](docs/screenshot-stack-frames.png)
+
+**Register file** — all general-purpose and special registers live during trace execution, with changed registers highlighted on each step:
+
+![Registers panel](docs/screenshot-registers.png)
+
+---
+
 ## What it does
 
 Most tools that teach memory layout show you a static diagram. This one compiles your actual code with `gcc -O0`, disassembles the binary, emulates the CPU, and lets you step through every instruction while every panel stays in sync:
