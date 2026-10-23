@@ -1,3 +1,8 @@
+# fly.toml app configuration file generated for stackframe-viz-backend on 2026-10-23T02:10:23+01:00
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
 app = 'stackframe-viz-backend'
 primary_region = 'lhr'
 
@@ -19,3 +24,4 @@ primary_region = 'lhr'
   memory = '256mb'
   cpu_kind = 'shared'
   cpus = 1
+  memory_mb = 256
