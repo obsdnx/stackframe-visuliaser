@@ -6,7 +6,15 @@ function bytes(n) {
   return `${n} B`
 }
 
-function Segment({ className, title, arrow, items, renderItem, emptyLabel }) {
+const SEG_DESCS = {
+  stack: 'Local variables & call frames — grows downward, freed automatically on return',
+  heap:  'Dynamic allocations via malloc() — you control lifetime, grows upward',
+  bss:   'Uninitialized globals — zero-filled by the OS before main() runs',
+  data:  'Initialized globals & statics — stored in the binary, live for the whole program',
+  text:  'Compiled machine instructions — read-only, may be shared between processes',
+}
+
+function Segment({ className, title, arrow, desc, items, renderItem, emptyLabel }) {
   return (
     <div className={`mem-segment ${className}`}>
       <div className="mem-segment-header">
@@ -15,6 +23,7 @@ function Segment({ className, title, arrow, items, renderItem, emptyLabel }) {
           {bytes(items.reduce((s, x) => s + (typeof x.size === 'number' ? x.size : 0), 0))}
         </span>
       </div>
+      {desc && <div className="mem-seg-desc">{desc}</div>}
       <div className="mem-segment-body">
         {items.length === 0 && (
           <span style={{ fontSize: 11, opacity: 0.4, fontStyle: 'italic' }}>{emptyLabel}</span>
@@ -125,6 +134,7 @@ export default function MemoryMap({ segments, loading, currentTraceStep }) {
             {bytes(stackVars.reduce((s, v) => s + (typeof v.size === 'number' ? v.size : 0), 0))}
           </span>
         </div>
+        <div className="mem-seg-desc">{SEG_DESCS.stack}</div>
         <div className="mem-segment-body">
           {stackVars.length === 0 && (
             <span style={{ fontSize: 11, opacity: 0.4, fontStyle: 'italic' }}>no local variables found</span>
@@ -156,6 +166,7 @@ export default function MemoryMap({ segments, loading, currentTraceStep }) {
             {bytes(heap.reduce((s, h) => s + (typeof h.size === 'number' ? h.size : 0), 0))}
           </span>
         </div>
+        <div className="mem-seg-desc">{SEG_DESCS.heap}</div>
         <div className="mem-segment-body">
           {heap.length === 0 && (
             <span style={{ fontSize: 11, opacity: 0.4, fontStyle: 'italic' }}>no heap allocations found</span>
@@ -184,6 +195,7 @@ export default function MemoryMap({ segments, loading, currentTraceStep }) {
       <Segment
         className="seg-bss"
         title="BSS"
+        desc={SEG_DESCS.bss}
         items={bss}
         emptyLabel="no uninitialized globals"
         renderItem={(v, i) => (
@@ -195,6 +207,7 @@ export default function MemoryMap({ segments, loading, currentTraceStep }) {
       <Segment
         className="seg-data"
         title="DATA"
+        desc={SEG_DESCS.data}
         items={data}
         emptyLabel="no initialized globals"
         renderItem={(v, i) => (
@@ -206,6 +219,7 @@ export default function MemoryMap({ segments, loading, currentTraceStep }) {
       <Segment
         className="seg-text"
         title="TEXT (code)"
+        desc={SEG_DESCS.text}
         items={text}
         emptyLabel="no functions found"
         renderItem={(fn, i) => (
