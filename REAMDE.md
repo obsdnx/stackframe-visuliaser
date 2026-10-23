@@ -2,7 +2,7 @@
 
 An interactive C memory visualiser. Write C code in the browser, compile it on a real Linux backend, and watch the stack frames, assembly, memory segments, and CPU registers update live — instruction by instruction.
 
-**Live demo:** https://harare.systemsobsidian.workers.dev
+**Live demo:** [harare.systemsobsidian.workers.dev](https://harare.systemsobsidian.workers.dev)
 
 ---
 
